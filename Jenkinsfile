@@ -93,30 +93,7 @@ pipeline {
                 }
             }
         }
-        stage('🚢 Deploy to Kubernetes') {
-    steps {
-        script {
-            echo "🚢 Deploying to Kubernetes using deploy.sh..."
-            
-            try {
-                bat '''
-                    echo Making deploy.sh executable...
-                    
-                    echo Running Kubernetes deployment...
-                    deploy.sh
-                    
-                    echo Verifying deployment...
-                    kubectl get pods -n ecommerce
-                    kubectl get services -n ecommerce
-                '''
-                echo "✅ Kubernetes deployment completed successfully"
-            } catch (Exception e) {
-                error("❌ Kubernetes deployment failed: ${e.getMessage()}")
-            }
-        }
-    }
-}
-
+        
 
         stage('🚢 Deploy to Kubernetes') {
     steps {
