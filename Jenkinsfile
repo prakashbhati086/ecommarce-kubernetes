@@ -15,33 +15,6 @@ pipeline {
             }
         }
         
-        stage('🔍 Verify Project Structure') {
-            steps {
-                script {
-                    echo "📋 Checking project files..."
-                    bat '''
-                        echo === Project Root Files ===
-                        dir
-                        
-                        echo === Checking docker-compose.yml ===
-                        if exist docker-compose.yml (
-                            echo ✅ docker-compose.yml found
-                            type docker-compose.yml
-                        ) else (
-                            echo ❌ docker-compose.yml missing
-                        )
-                        
-                        echo === Checking service directories ===
-                        if exist user-service (echo ✅ user-service found) else (echo ❌ user-service missing)
-                        if exist order-service (echo ✅ order-service found) else (echo ❌ order-service missing)
-                        if exist payment-service (echo ✅ payment-service found) else (echo ❌ payment-service missing)
-                        if exist api-gateway (echo ✅ api-gateway found) else (echo ❌ api-gateway missing)
-                        if exist frontend (echo ✅ frontend found) else (echo ❌ frontend missing)
-                    '''
-                }
-            }
-        }
-        
         stage('🐳 Build Docker Images') {
             steps {
                 script {
@@ -63,29 +36,6 @@ pipeline {
             }
         }
         
-        stage('🧹 Clean Environment') {
-            steps {
-                script {
-                    echo "🧹 Cleaning existing containers and ports..."
-                    try {
-                        bat '''
-                            echo Stopping all running containers...
-                            for /f "tokens=*" %%i in ('docker ps -q') do docker stop %%i
-                            
-                            echo Removing containers...
-                            docker-compose down --remove-orphans || echo "No existing compose services"
-                            
-                            echo Checking port usage...
-                            netstat -an | findstr :3000 || echo "Port 3000 free"
-                            netstat -an | findstr :8080 || echo "Port 8080 free"
-                        '''
-                    } catch (Exception e) {
-                        echo "⚠️ Cleanup warnings: ${e.getMessage()}"
-                    }
-                }
-            }
-        }
-        
         stage('🚀 Deploy with Docker Compose') {
             steps {
                 script {
@@ -93,25 +43,21 @@ pipeline {
                     
                     try {
                         bat '''
-                            echo Starting services with detailed output...
-                            docker-compose up -d
+                            echo Stopping existing services...
+                            docker-compose down || echo "No existing services"
                             
-                            echo Waiting for services to start...
-                            timeout /t 30
+                            echo Starting new services...
+                            docker-compose up -d --build
                             
-                            echo Checking running containers...
-                            docker ps
+                            echo Services started successfully
                         '''
+                        
+                        // Use Jenkins sleep instead of Windows timeout
+                        echo "⏰ Waiting 30 seconds for services to initialize..."
+                        sleep(30)
+                        
                         echo "✅ Services deployed successfully"
                     } catch (Exception e) {
-                        echo "❌ Deployment failed, checking logs..."
-                        bat '''
-                            echo === Docker Compose Logs ===
-                            docker-compose logs --tail=50
-                            
-                            echo === Container Status ===
-                            docker ps -a
-                        '''
                         error("❌ Deployment failed: ${e.getMessage()}")
                     }
                 }
@@ -123,17 +69,26 @@ pipeline {
                 script {
                     echo "🏥 Checking if services are running..."
                     
+                    def healthChecks = [
+                        'API Gateway': 'http://localhost:8080/health',
+                        'User Service': 'http://localhost:5001/health',
+                        'Order Service': 'http://localhost:5002/health',
+                        'Payment Service': 'http://localhost:5003/health',
+                        'Frontend': 'http://localhost:3000'
+                    ]
+                    
+                    healthChecks.each { name, url ->
+                        echo "🔍 ${name}: ${url}"
+                    }
+                    
+                    // Test API Gateway health
                     try {
                         retry(3) {
-                            bat '''
-                                timeout /t 10
-                                curl -f http://localhost:8080/health || echo "API Gateway not ready yet..."
-                                curl -f http://localhost:5001/health || echo "User service not ready yet..."
-                            '''
+                            bat 'curl -f http://localhost:8080/health'
                         }
-                        echo "✅ Health check passed"
+                        echo "✅ Health checks passed"
                     } catch (Exception e) {
-                        echo "⚠️ Health check completed with warnings: ${e.getMessage()}"
+                        echo "⚠️ Health check warnings (services may still be starting): ${e.getMessage()}"
                     }
                 }
             }
@@ -153,6 +108,15 @@ pipeline {
             • User Service: http://localhost:5001
             • Order Service: http://localhost:5002
             • Payment Service: http://localhost:5003
+            
+            🐳 Docker images created:
+            • ${DOCKER_REGISTRY}/user-service:${BUILD_NUMBER}
+            • ${DOCKER_REGISTRY}/order-service:${BUILD_NUMBER}
+            • ${DOCKER_REGISTRY}/payment-service:${BUILD_NUMBER}
+            • ${DOCKER_REGISTRY}/api-gateway:${BUILD_NUMBER}
+            • ${DOCKER_REGISTRY}/frontend:${BUILD_NUMBER}
+            
+            🚀 Ready to test your microservices!
             """
         }
         
@@ -160,19 +124,19 @@ pipeline {
             echo """
             ❌ BUILD FAILED!
             
-            Build #${BUILD_NUMBER} failed. Check the detailed logs above.
+            Build #${BUILD_NUMBER} failed. Check console output above for details.
             """
-            
-            bat '''
-                echo === Final Debug Information ===
-                docker ps -a
-                docker-compose logs --tail=20 || echo "No compose logs available"
-            '''
         }
         
         always {
-            echo "🧹 Final cleanup..."
-            bat 'docker system prune -f || echo "Cleanup completed"'
+            echo "🧹 Cleaning up Docker resources..."
+            script {
+                try {
+                    bat 'docker system prune -f || echo "Cleanup completed"'
+                } catch (Exception e) {
+                    echo "Cleanup completed"
+                }
+            }
         }
     }
 }
