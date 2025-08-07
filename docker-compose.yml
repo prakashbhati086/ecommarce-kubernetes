@@ -1,89 +1,36 @@
-version: '3.8'
-
 services:
-  user-service:
-    build: ./user-service
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: jenkins-server
     ports:
-      - "5001:5001"
+      - "8090:8080"  # Changed to 8090 to avoid conflict with API Gateway
+      - "50000:50000"
     volumes:
-      - user-data:/app/data
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - FLASK_ENV=development
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
     networks:
-      - microservices-network
+      - jenkins-network
 
-  order-service:
-    build: ./order-service
-    ports:
-      - "5002:5002"
+  jenkins-docker:
+    image: docker:dind
+    container_name: jenkins-docker
+    privileged: true
+    environment:
+      - DOCKER_TLS_CERTDIR=/certs
     volumes:
-      - order-data:/app/data
-    depends_on:
-      user-service:
-        condition: service_healthy
-    environment:
-      - NODE_ENV=development
-      - USER_SERVICE_URL=http://user-service:5001
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - microservices-network
-
-  payment-service:
-    build: ./payment-service
+      - jenkins-docker-certs:/certs/client
+      - jenkins_home:/var/jenkins_home
     ports:
-      - "5003:5003"
-    environment:
-      - SPRING_PROFILES_ACTIVE=docker
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5003/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      - "2376:2376"
     networks:
-      - microservices-network
-
-  api-gateway:
-    build: ./api-gateway
-    ports:
-      - "8080:8080"
-    depends_on:
-      user-service:
-        condition: service_healthy
-      order-service:
-        condition: service_healthy
-      payment-service:
-        condition: service_healthy
-    environment:
-      - USER_SERVICE_URL=http://user-service:5001
-      - ORDER_SERVICE_URL=http://order-service:5002
-      - PAYMENT_SERVICE_URL=http://payment-service:5003
-    networks:
-      - microservices-network
-
-  frontend:
-    build: ./frontend
-    ports:
-      - "3000:3000"
-    depends_on:
-      - api-gateway
-    environment:
-      - REACT_APP_API_URL=http://localhost:8080
-    networks:
-      - microservices-network
+      - jenkins-network
 
 volumes:
-  user-data:
-  order-data:
+  jenkins_home:
+  jenkins-docker-certs:
 
 networks:
-  microservices-network:
+  jenkins-network:
     driver: bridge
