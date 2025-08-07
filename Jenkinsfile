@@ -7,7 +7,7 @@ pipeline {
     }
     
     stages {
-        stage('📁 Checkout Code') {
+        stage('📁 Checkout') {
             steps {
                 echo "🔍 Checking out code from GitHub..."
                 checkout scm
@@ -18,20 +18,24 @@ pipeline {
         stage('🐳 Build Docker Images') {
             steps {
                 script {
-                    echo "🏗️ Building Docker images for all services..."
+                    echo "🏗️ Building Docker images for all microservices..."
                     
                     def services = ['user-service', 'order-service', 'payment-service', 'api-gateway', 'frontend']
                     
                     services.each { service ->
                         echo "Building ${service}..."
-                        if (isUnix()) {
-                            sh "cd ${service} && docker build -t ${DOCKER_REGISTRY}/${service}:${BUILD_NUMBER} ."
-                            sh "cd ${service} && docker tag ${DOCKER_REGISTRY}/${service}:${BUILD_NUMBER} ${DOCKER_REGISTRY}/${service}:latest"
-                        } else {
-                            bat "cd ${service} && docker build -t ${DOCKER_REGISTRY}/${service}:${BUILD_NUMBER} ."
-                            bat "cd ${service} && docker tag ${DOCKER_REGISTRY}/${service}:${BUILD_NUMBER} ${DOCKER_REGISTRY}/${service}:latest"
+                        try {
+                            if (isUnix()) {
+                                sh "cd ${service} && docker build -t ${DOCKER_REGISTRY}/${service}:${BUILD_NUMBER} ."
+                                sh "cd ${service} && docker tag ${DOCKER_REGISTRY}/${service}:${BUILD_NUMBER} ${DOCKER_REGISTRY}/${service}:latest"
+                            } else {
+                                bat "cd ${service} && docker build -t ${DOCKER_REGISTRY}/${service}:${BUILD_NUMBER} ."
+                                bat "cd ${service} && docker tag ${DOCKER_REGISTRY}/${service}:${BUILD_NUMBER} ${DOCKER_REGISTRY}/${service}:latest"
+                            }
+                            echo "✅ ${service} built successfully"
+                        } catch (Exception e) {
+                            error("❌ Failed to build ${service}: ${e.getMessage()}")
                         }
-                        echo "✅ ${service} built successfully"
                     }
                 }
             }
@@ -42,31 +46,34 @@ pipeline {
                 script {
                     echo "🚀 Deploying services using Docker Compose..."
                     
-                    if (isUnix()) {
-                        sh '''
-                            echo "Stopping existing services..."
-                            docker-compose down || true
-                            
-                            echo "Starting new services..."
-                            docker-compose up -d --build
-                            
-                            echo "Waiting for services to start..."
-                            sleep 30
-                        '''
-                    } else {
-                        bat '''
-                            echo Stopping existing services...
-                            docker-compose down || echo "No existing services"
-                            
-                            echo Starting new services...
-                            docker-compose up -d --build
-                            
-                            echo Waiting for services to start...
-                            timeout /t 30
-                        '''
+                    try {
+                        if (isUnix()) {
+                            sh '''
+                                echo "Stopping existing services..."
+                                docker-compose down || true
+                                
+                                echo "Starting new services..."
+                                docker-compose up -d --build
+                                
+                                echo "Waiting for services to start..."
+                                sleep 30
+                            '''
+                        } else {
+                            bat '''
+                                echo Stopping existing services...
+                                docker-compose down || echo "No existing services"
+                                
+                                echo Starting new services...
+                                docker-compose up -d --build
+                                
+                                echo Waiting for services to start...
+                                timeout /t 30
+                            '''
+                        }
+                        echo "✅ Services deployed successfully"
+                    } catch (Exception e) {
+                        error("❌ Deployment failed: ${e.getMessage()}")
                     }
-                    
-                    echo "✅ Services deployed successfully"
                 }
             }
         }
@@ -76,30 +83,31 @@ pipeline {
                 script {
                     echo "🏥 Checking if services are running..."
                     
-                    def services = [
-                        'Frontend: http://localhost:3000',
-                        'API Gateway: http://localhost:8080/health',
-                        'User Service: http://localhost:5001/health',
-                        'Order Service: http://localhost:5002/health',
-                        'Payment Service: http://localhost:5003/health'
+                    def healthChecks = [
+                        'API Gateway': 'http://localhost:8080/health',
+                        'User Service': 'http://localhost:5001/health',
+                        'Order Service': 'http://localhost:5002/health',
+                        'Payment Service': 'http://localhost:5003/health',
+                        'Frontend': 'http://localhost:3000'
                     ]
                     
-                    services.each { service ->
-                        echo "🔍 ${service}"
+                    healthChecks.each { name, url ->
+                        echo "🔍 Checking ${name} at ${url}..."
                     }
                     
-                    // Simple health check
+                    // Simple health check with retry
                     try {
-                        if (isUnix()) {
-                            sh 'sleep 10 && curl -f http://localhost:8080/health || echo "Services starting up..."'
-                        } else {
-                            bat 'timeout /t 10 && curl -f http://localhost:8080/health || echo "Services starting up..."'
+                        retry(3) {
+                            if (isUnix()) {
+                                sh 'sleep 10 && curl -f http://localhost:8080/health || echo "Services starting up..."'
+                            } else {
+                                bat 'timeout /t 10 && curl -f http://localhost:8080/health || echo "Services starting up..."'
+                            }
                         }
+                        echo "✅ Health check passed"
                     } catch (Exception e) {
-                        echo "⚠️ Health check completed with warnings"
+                        echo "⚠️ Health check completed with warnings: ${e.getMessage()}"
                     }
-                    
-                    echo "✅ Health check completed"
                 }
             }
         }
@@ -112,7 +120,7 @@ pipeline {
             
             ✅ Build #${BUILD_NUMBER} completed successfully!
             
-            🌐 Your services are available at:
+            🌐 Your ecommerce microservices are available at:
             • Frontend: http://localhost:3000
             • API Gateway: http://localhost:8080
             • User Service: http://localhost:5001
@@ -125,6 +133,8 @@ pipeline {
             • ${DOCKER_REGISTRY}/payment-service:${BUILD_NUMBER}
             • ${DOCKER_REGISTRY}/api-gateway:${BUILD_NUMBER}
             • ${DOCKER_REGISTRY}/frontend:${BUILD_NUMBER}
+            
+            🚀 Ready to test your microservices!
             """
         }
         
@@ -132,12 +142,23 @@ pipeline {
             echo """
             ❌ BUILD FAILED!
             
-            Build #${BUILD_NUMBER} failed. Common issues:
-            • Check if Docker is running
-            • Verify all Dockerfiles exist
-            • Ensure ports are not in use
+            Build #${BUILD_NUMBER} failed. Common troubleshooting steps:
             
-            Check the console output above for details.
+            🔍 Check:
+            • Docker is running
+            • All service directories exist
+            • All Dockerfiles are present
+            • Ports are not in use
+            
+            📋 Service Structure Required:
+            • user-service/
+            • order-service/
+            • payment-service/
+            • api-gateway/
+            • frontend/
+            • docker-compose.yml
+            
+            Check the console output above for specific error details.
             """
         }
         
@@ -151,7 +172,7 @@ pipeline {
                         bat 'docker system prune -f || echo "Cleanup completed"'
                     }
                 } catch (Exception e) {
-                    echo "Cleanup completed"
+                    echo "Cleanup completed with warnings"
                 }
             }
         }
