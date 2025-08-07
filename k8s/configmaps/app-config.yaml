@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: ecommerce
+data:
+  # MongoDB Configuration
+  MONGODB_HOST: "mongodb-service"
+  MONGODB_PORT: "27017"
+  MONGODB_DATABASE: "ecommerce"
+  
+  # Service URLs
+  USER_SERVICE_URL: "http://user-service:5001"
+  ORDER_SERVICE_URL: "http://order-service:5002"
+  PAYMENT_SERVICE_URL: "http://payment-service:5003"
+  API_GATEWAY_URL: "http://api-gateway:8080"
+  
+  # Application Settings
+  NODE_ENV: "production"
+  FLASK_ENV: "production"
+  SPRING_PROFILES_ACTIVE: "kubernetes"
+  
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mongodb-secret
+  namespace: ecommerce
+type: Opaque
+data:
+  # Base64 encoded values
+  MONGODB_USERNAME: bW9uZ29hZG1pbg==  # mongoadmin
+  MONGODB_PASSWORD: c2VjcmV0cGFzc3dvcmQ=  # secretpassword
+  MONGODB_ROOT_PASSWORD: cm9vdHBhc3N3b3Jk  # rootpassword
