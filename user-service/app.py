@@ -9,13 +9,14 @@ CORS(app)
 
 # Initialize SQLite database
 def init_db():
-    conn = sqlite3.connect('users.db')
+    conn = sqlite3.connect('/app/data/users.db')
     conn.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL
+            password TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     conn.commit()
@@ -27,58 +28,84 @@ def health():
 
 @app.route('/api/users/register', methods=['POST'])
 def register():
-    data = request.get_json()
-    username = data.get('username')
-    email = data.get('email')
-    password = data.get('password')
-    
-    if not username or not email or not password:
-        return jsonify({'error': 'Missing required fields'}), 400
-    
-    # Hash password
-    hashed_password = hashlib.sha256(password.encode()).hexdigest()
-    
     try:
-        conn = sqlite3.connect('users.db')
+        data = request.get_json()
+        username = data.get('username')
+        email = data.get('email')
+        password = data.get('password')
+        
+        if not username or not email or not password:
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        # Hash password
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+        
+        conn = sqlite3.connect('/app/data/users.db')
         conn.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
                     (username, email, hashed_password))
         conn.commit()
         conn.close()
+        
         return jsonify({'message': 'User registered successfully'}), 201
+        
     except sqlite3.IntegrityError:
         return jsonify({'error': 'Username or email already exists'}), 409
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/users/login', methods=['POST'])
 def login():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-    
-    hashed_password = hashlib.sha256(password.encode()).hexdigest()
-    
-    conn = sqlite3.connect('users.db')
-    cursor = conn.execute('SELECT id, username, email FROM users WHERE username=? AND password=?',
-                         (username, hashed_password))
-    user = cursor.fetchone()
-    conn.close()
-    
-    if user:
-        return jsonify({'message': 'Login successful', 'user_id': user[0], 'username': user[1]}), 200
-    else:
-        return jsonify({'error': 'Invalid credentials'}), 401
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+        
+        if not username or not password:
+            return jsonify({'error': 'Missing username or password'}), 400
+        
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+        
+        conn = sqlite3.connect('/app/data/users.db')
+        cursor = conn.execute('SELECT id, username, email FROM users WHERE username=? AND password=?',
+                             (username, hashed_password))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if user:
+            return jsonify({
+                'message': 'Login successful',
+                'user_id': user[0],
+                'username': user[1],
+                'email': user[2]
+            }), 200
+        else:
+            return jsonify({'error': 'Invalid credentials'}), 401
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/users/<int:user_id>', methods=['GET'])
 def get_user(user_id):
-    conn = sqlite3.connect('users.db')
-    cursor = conn.execute('SELECT id, username, email FROM users WHERE id=?', (user_id,))
-    user = cursor.fetchone()
-    conn.close()
-    
-    if user:
-        return jsonify({'id': user[0], 'username': user[1], 'email': user[2]}), 200
-    else:
-        return jsonify({'error': 'User not found'}), 404
+    try:
+        conn = sqlite3.connect('/app/data/users.db')
+        cursor = conn.execute('SELECT id, username, email FROM users WHERE id=?', (user_id,))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if user:
+            return jsonify({
+                'id': user[0],
+                'username': user[1],
+                'email': user[2]
+            }), 200
+        else:
+            return jsonify({'error': 'User not found'}), 404
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
+    # Create data directory if it doesn't exist
+    os.makedirs('/app/data', exist_ok=True)
     init_db()
     app.run(host='0.0.0.0', port=5001, debug=True)
