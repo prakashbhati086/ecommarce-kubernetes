@@ -93,6 +93,66 @@ pipeline {
                 }
             }
         }
+        stage('🚢 Deploy to Kubernetes') {
+    steps {
+        script {
+            echo "🚢 Deploying to Kubernetes using deploy.sh..."
+            
+            try {
+                bat '''
+                    echo Making deploy.sh executable...
+                    
+                    echo Running Kubernetes deployment...
+                    deploy.sh
+                    
+                    echo Verifying deployment...
+                    kubectl get pods -n ecommerce
+                    kubectl get services -n ecommerce
+                '''
+                echo "✅ Kubernetes deployment completed successfully"
+            } catch (Exception e) {
+                error("❌ Kubernetes deployment failed: ${e.getMessage()}")
+            }
+        }
+    }
+}
+
+
+        stage('🚢 Deploy to Kubernetes') {
+    steps {
+        script {
+            echo "🚢 Deploying to Kubernetes cluster..."
+            
+            try {
+                bat '''
+                    echo Updating Kubernetes manifests with new image tags...
+                    
+                    echo Deploying to Kubernetes...
+                    kubectl apply -f k8s/namespaces/
+                    kubectl apply -f k8s/storage/
+                    kubectl apply -f k8s/configmaps/
+                    
+                    echo Deploying services...
+                    kubectl apply -f k8s/deployments/
+                    kubectl apply -f k8s/ingress/
+                    
+                    echo Waiting for rollout to complete...
+                    kubectl rollout status deployment/user-service -n ecommerce
+                    kubectl rollout status deployment/order-service -n ecommerce
+                    kubectl rollout status deployment/payment-service -n ecommerce
+                    kubectl rollout status deployment/api-gateway -n ecommerce
+                    kubectl rollout status deployment/frontend -n ecommerce
+                    
+                    echo Checking deployment status...
+                    kubectl get pods -n ecommerce
+                '''
+                echo "✅ Kubernetes deployment completed successfully"
+            } catch (Exception e) {
+                error("❌ Kubernetes deployment failed: ${e.getMessage()}")
+            }
+        }
+    }
+}
     }
     
     post {
